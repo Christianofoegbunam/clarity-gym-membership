@@ -1,25 +1,33 @@
-[Previous test content]
-
 Clarinet.test({
-    name: "Test membership remaining time calculation",
+    name: "Test complete membership lifecycle",
     async fn(chain: Chain, accounts: Map<string, Account>) {
         const wallet1 = accounts.get('wallet_1')!;
+        const deployer = accounts.get('deployer')!;
         
-        // Register membership
+        // Test registration
         let block = chain.mineBlock([
             Tx.contractCall('gym-membership', 'register-membership', [
                 types.uint(1)
             ], wallet1.address)
         ]);
+        block.receipts[0].result.expectOk();
         
-        // Check remaining time
-        let timeBlock = chain.mineBlock([
-            Tx.contractCall('gym-membership', 'get-remaining-time', [
+        // Test tier check
+        let tierBlock = chain.mineBlock([
+            Tx.contractCall('gym-membership', 'get-membership-tier', [
                 types.principal(wallet1.address)
             ], wallet1.address)
         ]);
+        tierBlock.receipts[0].result.expectOk().expectUint(1);
         
-        // Should be close to membership duration
-        timeBlock.receipts[0].result.expectOk();
+        // Test cancellation
+        let cancelBlock = chain.mineBlock([
+            Tx.contractCall('gym-membership', 'cancel-membership', [
+                types.principal(wallet1.address)
+            ], deployer.address)
+        ]);
+        cancelBlock.receipts[0].result.expectOk();
     }
 });
+
+[Previous tests remain unchanged...]
