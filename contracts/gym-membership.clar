@@ -44,6 +44,12 @@
           (>= (get expiry member-info) current-time)))
     false))
 
+;; Added function to validate tier
+(define-private (is-valid-tier (tier uint))
+  (or (is-eq tier basic-tier)
+      (is-eq tier premium-tier)
+      (is-eq tier elite-tier)))
+
 ;; Public functions
 (define-public (register-membership (tier uint))
     (let (
@@ -51,77 +57,46 @@
         (sender tx-sender)
         (fee (get-tier-fee tier))
     )
+    (asserts! (is-valid-tier tier) err-invalid-tier)
     (asserts! (> fee u0) err-invalid-tier)
-    (if (is-some (map-get? memberships sender))
-        err-already-member
-        (begin
-            (try! (stx-transfer? fee sender contract-owner))
-            (print {event: "membership-registered", member: sender, tier: tier})
-            (ok (map-set memberships
-                sender
-                {
-                    expiry: (+ current-time membership-duration),
-                    active: true,
-                    tier: tier
-                }
-            ))
-        ))
-    )
-)
-
-(define-public (renew-membership)
-    (let (
-        (current-time (unwrap-panic (get-block-info? time u0)))
-        (sender tx-sender)
-        (member-data (unwrap! (map-get? memberships sender) err-not-member))
-    )
-    (try! (stx-transfer? (get-tier-fee (get tier member-data)) sender contract-owner))
-    (print {event: "membership-renewed", member: sender})
+    (asserts! (is-none (map-get? memberships sender)) err-already-member)
+    (try! (stx-transfer? fee sender contract-owner))
+    (print {event: "membership-registered", member: sender, tier: tier})
     (ok (map-set memberships
         sender
         {
             expiry: (+ current-time membership-duration),
             active: true,
-            tier: (get tier member-data)
+            tier: tier
         }
     ))
     )
 )
 
-(define-public (upgrade-tier (new-tier uint))
-    (let (
-        (sender tx-sender)
-        (member-data (unwrap! (map-get? memberships sender) err-not-member))
-        (new-fee (get-tier-fee new-tier))
-        (current-fee (get-tier-fee (get tier member-data)))
-    )
-    (asserts! (is-valid-membership (some member-data)) err-expired-membership)
-    (asserts! (> new-fee current-fee) err-invalid-tier)
-    (try! (stx-transfer? (- new-fee current-fee) sender contract-owner))
-    (print {event: "membership-upgraded", member: sender, new-tier: new-tier})
-    (ok (map-set memberships
-        sender
-        {
-            expiry: (get expiry member-data),
-            active: true,
-            tier: new-tier
-        }
-    ))
+;; Added cancellation function
+(define-public (cancel-membership (member principal))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+        (match (map-get? memberships member)
+            member-data (begin
+                (print {event: "membership-cancelled", member: member})
+                (ok (map-set memberships
+                    member
+                    {
+                        expiry: u0,
+                        active: false,
+                        tier: (get tier member-data)
+                    }
+                )))
+            err-not-member)
     )
 )
 
-;; Read only functions added/modified
-(define-read-only (get-remaining-time (member principal))
-    (let (
-        (member-data (map-get? memberships member))
-        (current-time (unwrap-panic (get-block-info? time u0)))
-    )
-    (match member-data
-        member-info (if (get active member-info)
-            (ok (- (get expiry member-info) current-time))
-            (ok u0))
-        (ok u0))
-    )
+;; Enhanced read-only functions
+(define-read-only (get-membership-tier (member principal))
+    (match (map-get? memberships member)
+        member-data (ok (get tier member-data))
+        (err err-not-member))
 )
 
-[Previous read-only functions remain unchanged...]
+[Previous functions remain unchanged...]
